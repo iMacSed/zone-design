@@ -4,9 +4,11 @@
         <CodeTextArea 
             height="30%" 
             width="30%"
-            language="javascript" 
+            language="json" 
+            class="zt-test"
             v-model="codeContent"
         />
+        <t-button style="margin-top: 20px;">nihao</t-button>
     </div>
 </template>
 
@@ -17,4 +19,5 @@ const codeContent = ref('');
 </script>
 
 <style lang="scss">
+
 </style>

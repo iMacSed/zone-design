@@ -1,12 +1,14 @@
 <template>
-    <div style="width:100%; height:100%; background-color:var(--zt-brand-color-1);">
+    <div style="width:100%; height:100%;">
         <t-button>nihao</t-button>
         <CodeTextArea 
+            v-model="codeContent"
             height="30%" 
             width="30%"
-            language="json" 
-            class="zt-test"
-            v-model="codeContent"
+            language="javascript"
+            :readonly="false"
+            status="success"
+            statusTip="代码格式正确"
         />
         <t-button style="margin-top: 20px;">nihao</t-button>
     </div>

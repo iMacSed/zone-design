@@ -6,8 +6,22 @@
         <!-- 代码内容显示区域，包含可编辑区域和高亮容器 -->
         <div class="code-textarea__content">
             <!-- pre和code标签用于保留代码格式，动态绑定语言类用于语法高亮 -->
-            <pre class="code-textarea__pre" :class="`code-textarea__pre--${language}`"><code>
+            <pre
+                class="code-textarea__pre code-textarea__input"
+                :class="[
+                    `code-textarea__pre--${language}`,
+                    {'code-textarea__input--readonly':readonly}
+                ]"
+                :contenteditable="!readonly"
+                @input="handleInput"
+                @keydown="handleKeyDown"
+                @focus="handleFocus"
+                @blur="handleBlur"
+                ref="inputRef"
+                :data-placeholder="placeholder"
+            >
                 <!-- 核心可编辑区域，根据readonly控制编辑状态 -->
+                <!-- <code>
                 <div 
                     class="code-textarea__input" 
                     :contenteditable="!readonly"
@@ -19,7 +33,8 @@
                     ref="inputRef"
                     :data-placeholder="placeholder"
                 ></div>
-            </code></pre>
+                </code> -->
+            </pre>
         </div>
         <!-- 底部状态栏，包含语言高亮按钮和状态提示文字 -->
         <div class="code-textarea__footer">
@@ -32,7 +47,7 @@
                 {{ language.toUpperCase() }}
             </span>
             <!-- 状态提示文字 -->
-            <span v-if="statusTip" class="code-textarea__status-tip">
+            <span v-show="statusTip" class="code-textarea__status-tip">
                 Tips：{{ statusTip }}
             </span>
         </div>
@@ -83,7 +98,8 @@ const props = defineProps({
         type: String,
         default: '',
         validator: (value) => {
-            return ['', 'success', 'error', 'warning'].includes(value);
+            return ['', 'success', 'error', 'warning']
+                .includes(value);
         }
     },
     // 状态提示文字（显示在底部状态栏右侧）
@@ -117,9 +133,11 @@ const emits = defineEmits(['update:modelValue']);
 const inputRef = ref(null);
 // 监听modelValue变化更新输入框内容
 watch(() => props.modelValue, (newVal) => {
-    if (inputRef.value && inputRef.value.innerText !== newVal) {
-        inputRef.value.innerText = newVal;
-    }
+    nextTick(() => {
+        if (inputRef.value && inputRef.value.innerText !== newVal) {
+            inputRef.value.innerText = newVal;
+        }
+    });
 }, { immediate: true });
 
 // 处理输入事件（子组件 -> 父组件，同步输入内容）
@@ -136,10 +154,12 @@ const highlightCode = () => {
     if (inputRef.value) {
         // 获取输入的代码内容
         const code = inputRef.value.innerText;
+        console.log(code);
         // 使用 highlight.js 高亮代码（指定语言）
         const result = hljs.highlight(code, { 
             language: props.language 
         });
+        console.log(result.value);
         // 更新代码区域内容为高亮后的 HTML（含样式标签）
         inputRef.value.innerHTML = result.value;
     }
@@ -159,6 +179,28 @@ const handleKeyDown = (e) => {
 
     const pressedKey = e.key;
     const closingChar = autoCompleteMap[pressedKey];
+    debugger
+
+    // 处理回车键
+    if (pressedKey === 'Enter') {
+        e.preventDefault(); // 阻止默认行为
+        const selection = window.getSelection();
+        const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+        
+        if (range) {
+            // 插入单个换行符
+            const lineBreak = document.createTextNode('\n');
+            range.insertNode(lineBreak);
+            // 移动光标到换行符之后
+            range.setStartAfter(lineBreak);
+            range.setEndAfter(lineBreak);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            // 手动触发内容同步
+            emits('update:modelValue', inputRef.value.innerText);
+        }
+        return; // 提前返回，避免后续处理
+    }
 
     // 1. 括号/引号自动补全逻辑
     if (closingChar) {
@@ -181,16 +223,18 @@ const handleKeyDown = (e) => {
             range.insertNode(rightTextNode);
 
             // 3. 调整光标到两个字符中间（左括号后，右括号前）
-            range.setStart(parentNode, startOffset + 1);
-            range.setEnd(parentNode, startOffset + 1);
+            // range.setStart(parentNode, startOffset + 1);
+            // range.setEnd(parentNode, startOffset + 1);
+            range.setStartAfter(leftTextNode);  // 使用新插入的左节点定位
+            range.setEndAfter(leftTextNode);    // 确保光标在两个字符之间
             selection.removeAllRanges();
             selection.addRange(range);
 
             // 4. 更新绑定值
             emits('update:modelValue', inputRef.value.innerText);
         }
-    } 
-    // 2. Tab缩进和Shift+Tab反缩进逻辑
+    }
+    // 3. Tab缩进和Shift+Tab反缩进逻辑
     else if (e.key === 'Tab') {
         e.preventDefault(); // 阻止默认Tab行为（如焦点切换）
         const selection = window.getSelection();
@@ -198,40 +242,41 @@ const handleKeyDown = (e) => {
         
         if (!range || !inputRef.value) return;
 
+        
+        const tabNode = document.createTextNode('\t'); // 创建Tab字符节点
+        range.insertNode(tabNode); // 在光标位置插入Tab
+        // 调整光标到Tab之后
+        range.setStartAfter(tabNode);
+        range.setEndAfter(tabNode);
+        selection.removeAllRanges();
+        selection.addRange(range);
         // 1. Tab键：插入缩进（\t字符）
-        if (!e.shiftKey) {
-            const tabNode = document.createTextNode('\t'); // 创建Tab字符节点
-            range.insertNode(tabNode); // 在光标位置插入Tab
-            // 调整光标到Tab之后
-            range.setStartAfter(tabNode);
-            range.setEndAfter(tabNode);
-            selection.removeAllRanges();
-            selection.addRange(range);
-        } 
+        // if (!e.shiftKey) {
+        // } 
         // 2. Shift+Tab键：移除缩进（删除行首的一个Tab）
-        else {
-            const startContainer = range.startContainer;
-            const startOffset = range.startOffset;
-            const textContent = startContainer.textContent || '';
+        // else {
+        //     const startContainer = range.startContainer;
+        //     const startOffset = range.startOffset;
+        //     const textContent = startContainer.textContent || '';
 
-            // 获取当前行起始位置（上一个换行符之后）
-            const lineStart = textContent.lastIndexOf('\n', startOffset) + 1;
-            // 获取当前行内容（光标前部分）
-            const lineBeforeCursor = textContent.substring(lineStart, startOffset);
+        //     // 获取当前行起始位置（上一个换行符之后）
+        //     const lineStart = textContent.lastIndexOf('\n', startOffset) + 1;
+        //     // 获取当前行内容（光标前部分）
+        //     const lineBeforeCursor = textContent.substring(lineStart, startOffset);
 
-            // 如果行首有Tab缩进，则移除一个Tab
-            if (lineBeforeCursor.startsWith('\t')) {
-                // 拼接移除Tab后的文本（保留行首前内容 + 移除Tab后的行内容）
-                const newText = textContent.substring(0, lineStart) + 
-                                textContent.substring(lineStart + 1); // 移除一个Tab
-                startContainer.textContent = newText;
-                // 调整光标位置（左移一个字符，因为删除了一个Tab）
-                range.setStart(startContainer, startOffset - 1);
-                range.setEnd(startContainer, startOffset - 1);
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }
-        }
+        //     // 如果行首有Tab缩进，则移除一个Tab
+        //     if (lineBeforeCursor.startsWith('\t')) {
+        //         // 拼接移除Tab后的文本（保留行首前内容 + 移除Tab后的行内容）
+        //         const newText = textContent.substring(0, lineStart) + 
+        //                         textContent.substring(lineStart + 1); // 移除一个Tab
+        //         startContainer.textContent = newText;
+        //         // 调整光标位置（左移一个字符，因为删除了一个Tab）
+        //         range.setStart(startContainer, startOffset - 1);
+        //         range.setEnd(startContainer, startOffset - 1);
+        //         selection.removeAllRanges();
+        //         selection.addRange(range);
+        //     }
+        // }
 
         // 更新绑定值（同步缩进/反缩进后的内容）
         emits('update:modelValue', inputRef.value.innerText);
@@ -298,76 +343,76 @@ $code-textarea__font-family: 'Source Code Pro', monospace;
             height: 100%;
             // 添加字体大小重置，避免pre标签默认字体影响子元素
             font-size: 0;
+        }
 
-            // 可编辑输入区域核心样式
-            .code-textarea__input {
-                height: calc(100%); /* 输入区域高度填满父容器 */
-                max-height: calc(100%); /* 限制最大高度为父容器高度 */
+        // 可编辑输入区域核心样式
+        .code-textarea__input {
+            height: calc(100%); /* 输入区域高度填满父容器 */
+            max-height: calc(100%); /* 限制最大高度为父容器高度 */
+            font-size: 16px;
+            outline: none; /* 移除默认焦点轮廓线（自定义样式） */
+            color: $code-textarea__input--text-color;
+            /* 调整内边距：保留左右内边距，减小顶部内边距（根据需要调整数值） */
+            padding: 10px 20px; /* 原 padding: 20px */
+            overflow-x: auto; /* 水平滚动（内容超出宽度时） */
+            overflow-y: auto; /* 垂直滚动（内容超出高度时） */
+            font-family: $code-textarea__font-family; // 等宽字体（代码显示常用）
+            box-sizing: border-box; /* 确保padding不会导致高度溢出 */
+
+
+            /* 滚动条样式 - 开始（自定义滚动条外观） */
+            /* 滚动条整体 */
+            &::-webkit-scrollbar {
+                width: 5px;  /* 垂直滚动条宽度 */
+                height: 5px; /* 水平滚动条高度 */
+            }
+            
+            &::-webkit-scrollbar-track {
+                background: $code-textarea--bg-color;
+                border-radius: 4px;
+            }
+            
+            /* 滚动条滑块颜色使用语言标签背景色变量 + alpha通道 */
+            &::-webkit-scrollbar-thumb {
+                background: rgba($code-textarea__lang--bg-color, 0.5);
+                border-radius: 4px;
+                transition: background 0.2s; // 鼠标悬停时颜色过渡
+            }
+            
+            &::-webkit-scrollbar-thumb:hover {
+                background: rgba($code-textarea__lang--bg-color, 0.8); // 悬停时加深颜色
+            }
+            
+            &::-webkit-scrollbar-corner {
+                background: $code-textarea--bg-color; // 滚动条交汇处背景色
+            }
+            /* 滚动条样式 - 结束 */
+
+            /* 使用伪元素实现placeholder效果（无内容且未聚焦时显示） */
+            &:empty:not(:focus)::before {
+                content: attr(data-placeholder); // 从data属性获取placeholder文本
+                color: rgba($code-textarea__input--text-color, 0.5); // 半透明文本
+                pointer-events: none; // 避免占位符干扰点击事件
                 font-size: 16px;
-                outline: none; /* 移除默认焦点轮廓线（自定义样式） */
-                color: $code-textarea__input--text-color;
-                /* 调整内边距：保留左右内边距，减小顶部内边距（根据需要调整数值） */
-                padding: 10px 20px; /* 原 padding: 20px */
-                overflow-x: auto; /* 水平滚动（内容超出宽度时） */
-                overflow-y: auto; /* 垂直滚动（内容超出高度时） */
-                font-family: $code-textarea__font-family; // 等宽字体（代码显示常用）
-                box-sizing: border-box; /* 确保padding不会导致高度溢出 */
-
-
-                /* 滚动条样式 - 开始（自定义滚动条外观） */
-                /* 滚动条整体 */
-                &::-webkit-scrollbar {
-                    width: 5px;  /* 垂直滚动条宽度 */
-                    height: 5px; /* 水平滚动条高度 */
-                }
-                
-                &::-webkit-scrollbar-track {
-                    background: $code-textarea--bg-color;
-                    border-radius: 4px;
-                }
-                
-                /* 滚动条滑块颜色使用语言标签背景色变量 + alpha通道 */
-                &::-webkit-scrollbar-thumb {
-                    background: rgba($code-textarea__lang--bg-color, 0.5);
-                    border-radius: 4px;
-                    transition: background 0.2s; // 鼠标悬停时颜色过渡
-                }
-                
-                &::-webkit-scrollbar-thumb:hover {
-                    background: rgba($code-textarea__lang--bg-color, 0.8); // 悬停时加深颜色
-                }
-                
-                &::-webkit-scrollbar-corner {
-                    background: $code-textarea--bg-color; // 滚动条交汇处背景色
-                }
-                /* 滚动条样式 - 结束 */
-
-                /* 使用伪元素实现placeholder效果（无内容且未聚焦时显示） */
-                &:empty:not(:focus)::before {
-                    content: attr(data-placeholder); // 从data属性获取placeholder文本
-                    color: rgba($code-textarea__input--text-color, 0.5); // 半透明文本
-                    pointer-events: none; // 避免占位符干扰点击事件
-                    font-size: 16px;
-                    font-family: $code-textarea__font-family;
-                }
+                font-family: $code-textarea__font-family;
             }
 
-            // 只读状态样式（区分可编辑/不可编辑状态）
-            .code-textarea__input--readonly {
-                color: $code-textarea__input--readonly-color; // 只读文本颜色（更浅）
-                cursor: default; // 光标变为默认（非文本输入光标）
-                
-                // 只读状态下移除焦点样式（避免误导）
-                &:focus {
-                    outline: none;
-                }
-                
-                // 只读状态下隐藏滚动条（内容不可编辑，无需滚动交互）
-                &::-webkit-scrollbar {
-                    display: none;
-                }
-            }
+        }
 
+        // 只读状态样式（区分可编辑/不可编辑状态）
+        .code-textarea__input--readonly {
+            color: $code-textarea__input--readonly-color; // 只读文本颜色（更浅）
+            cursor: default; // 光标变为默认（非文本输入光标）
+            
+            // 只读状态下移除焦点样式（避免误导）
+            &:focus {
+                outline: none;
+            }
+            
+            // 只读状态下隐藏滚动条（内容不可编辑，无需滚动交互）
+            &::-webkit-scrollbar {
+                display: none;
+            }
         }
 
     }
